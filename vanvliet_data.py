@@ -6,6 +6,7 @@ from matplotlib.lines import Line2D
 from scipy.optimize import curve_fit
 from netCDF4 import Dataset
 import statsmodels.api as sm
+import scipy.stats
 
 
 datadir = '../isimip-ps/data/processed/globalmean_annual'
@@ -107,7 +108,7 @@ plt.legend(handles=handles)
 plt.ylabel('GMST')
 plt.xlabel('Year')
 plt.tight_layout()
-plt.savefig('plots/gmst_no_pi.png', dpi=100)
+# plt.savefig('plots/gmst_no_pi.png', dpi=100)
 # plt.clf()
 
 # CONCLUSION: FastTrack and ISIMIP2b are not the same data, even for the 
@@ -194,7 +195,7 @@ for scen in scenarios:
 
 energy_change = {
 
-    'Thermal':{
+    'Thermoelectric':{
     'Baseline':{
         'rcp26':{
             '2020s':[-7.4, -5.8, -4.5],
@@ -220,7 +221,7 @@ energy_change = {
         
     },
    
-    'Hydro':{
+    'Hydroelectric':{
     'Baseline':{
         'rcp26':{
             '2020s':[-2.7, -1.7, -0.6],
@@ -273,21 +274,113 @@ for l_i, level in enumerate(levels):
         
         params[response][level][source] = params_in
         
-        
 
 #%%
 
+# there's 5 models, and we have min, max, mean. best we can do is assume
+# these are equally sampled - so min is at 83 %ile, max at 17
+
+def opt(x, q17_desired, q50_desired, q83_desired):
+    q17, q50, q83 = scipy.stats.skewnorm.ppf(
+        (0.17, 0.50, 0.83), x[0], loc=x[1], scale=x[2]
+    )
+    return (q17 - q17_desired, q50 - q50_desired, q83 - q83_desired)
+
+temps_stats = np.linspace(0.5, 4.5, 9) 
+
+
+dist_params = {}
+dist_params[response] = {}
+
+for source in energy_change.keys():
+    dist_params[source] = {}
+        
+    for t in temps_stats:
+        
+        q17_in = fit(t, *params[response]['low'][source])
+        q50_in = fit(t, *params[response]['med'][source])
+        q83_in = fit(t, *params[response]['high'][source])
+    
+        params_in = scipy.optimize.root(opt, [1, 1, 1], 
+                    args=(q17_in, q50_in, q83_in)).x
+            
+        valtest = scipy.stats.skewnorm.ppf(0.025, 
+                     params_in[0], params_in[1], params_in[2])
+        
+        if (params_in == [1., 1., 1.]).all():
+            print('1s; are the %iles in order?')
+        elif np.abs(valtest > 100):
+            print(f'too big? {valtest}')
+
+        else:
+            dist_params[source][t] = params_in        
+
+#%%
+
+params_percentiles = {}
+
+percentiles = np.linspace(0.05, 0.95, 19)
+
+percentiles = np.asarray([0.025, 0.5, 0.975])
+
+linestyle_list = ['dotted', 'solid', 'dashed']
+
+for source in energy_change.keys():
+    params_percentiles[source] = {}
+    
+    for perc_i, percentile in enumerate(percentiles):
+        vals = []
+        temps_fit = []
+        for t in temps_stats:
+            if t in dist_params[source].keys():
+                    
+                params_dist = dist_params[source][t]
+                
+                vals.append(scipy.stats.skewnorm.ppf(percentile, 
+                             params_dist[0], params_dist[1], params_dist[2]))
+                
+                temps_fit.append(t)
+
+        params_percentile, _ = curve_fit(
+            fit, temps_fit, vals)
+        
+        params_percentiles[source][percentile] = params_percentile
+
+#%%
 temps_plot = np.linspace(0, 4.5, 100)
 
 colors = {
-    'Adaptation':'blue', 
-    'Baseline':'red',
+    'low':'blue', 
+    'med':'black',
+    'high':'red',
+    }
+
+percentiles_colors = {
+    0.025:'blue', 
+    0.5:'black',
+    0.975:'red',    
     }
 
 markers = {
     '2020s':'x', 
     '2050s':'o',
     }
+
+
+handles = []
+
+handles.append(Line2D([0], [0], label='Rebased, 2.5-97.5', color='grey'))
+handles.append(Line2D([0], [0], linestyle='--', label='Quadratic, 17-83', color='grey'))
+
+for level in levels:
+    handles.append(Line2D([0], [0], label=level, color=colors[level]))
+
+for decade in decades:
+    handles.append(
+        Line2D([0], [0], label=f'{decade} 17, 50, 83 %ile', marker=markers[decade], 
+               color='black', linestyle=''),
+        )   
+
 
 for source in energy_change.keys():
     for scen in scenarios:
@@ -301,7 +394,7 @@ for source in energy_change.keys():
                     
                 plt.scatter(np.mean(temp_data[scen][decade]), 
                     energy_change[source]['Baseline'][scen][decade][l_i],
-                    color=colors['Baseline'], marker=markers[decade])
+                    color=colors[level], marker=markers[decade])
                 
 
             
@@ -312,34 +405,36 @@ for source in energy_change.keys():
                  #        energy_change[source][response][scen][decade],
                  #        color=colors[response], marker=markers[decade])
     
-    handles = []
+ 
     
-    for decade in decades:
-        handles.append(
-            Line2D([0], [0], label=f'{decade}', marker=markers[decade], 
-                   color='black', linestyle=''),
-            )    
-    
-    for response in ['Baseline', 'Adaptation']:
-        handles.append(
-            Line2D([0], [0], label=f'{response}', marker='s', 
-                   color=colors[response], linestyle=''),
-            ) 
+    # for response in ['Baseline', 'Adaptation']:
+    #     handles.append(
+    #         Line2D([0], [0], label=f'{response}', marker='s', 
+    #                color=colors[response], linestyle=''),
+    #         ) 
         
         
     for level in levels:
     
         plt.plot(temps_plot, fit(temps_plot, *params['Baseline'][level][source]), 
-                 color=colors['Baseline'])
+                  color=colors[level], linestyle='--')
             
         
+    for perc_i, percentile in enumerate(percentiles):
+
+        params_in = params_percentiles[source][percentile]             
     
+        plt.plot(temps_plot, fit(temps_plot, *params_in), 
+                 # linestyle = linestyle_list[perc_i],
+                 label=f'{source} {100*percentile}', color=percentiles_colors[percentile])
+
+  
     plt.legend(handles=handles)
-    plt.xlabel('GMST cf 1861-1900')
+    plt.xlabel('GMST cf pre-industrial')
     plt.ylabel(f'% damages on {source} power plants')
     plt.title(f'{source}')
     plt.tight_layout()
-    plt.savefig(f'plots/{source}_gmst_mmm.png', dpi=100)
+    plt.savefig(f'plots/{source}_gmst_mmm_percentiles.png', dpi=100)
     plt.clf()
 
 #%%
