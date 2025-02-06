@@ -8,8 +8,15 @@ from netCDF4 import Dataset
 import statsmodels.api as sm
 import scipy.stats
 
+# This calculates climate impacts on thermoelectric and hydroelectric
+# energy supply as a function of global mean temperatures.
 
-datadir = '../isimip-ps/data/processed/globalmean_annual'
+# Van Vliet et al. 2016 (https://www.nature.com/articles/nclimate2903) from
+# whom we take the impact data use ISIMIP FastTrack cimate imputs, which only
+# go back to 1961; therefore we use the 2b runs from the same models to 
+# extend back to pre-industrial times.
+
+datadir = '../data'
 
 scenarios = ['rcp26', 'rcp85']
 decades = ['2020s', '2050s']
@@ -26,7 +33,6 @@ esms = ['MIROC5', 'IPSL-CM5A-LR', 'HadGEM2-ES', 'GFDL-ESM2M']
 esms_ft = ['MIROC-ESM-CHEM', 'IPSL-CM5A-LR', 'HadGEM2-ES', 
         'GFDL-ESM2M', 'NorESM1-M']
 
-datadir_ft = 'vanVliet2016/FastTrack_tas_globalmean'
 
 temp_data_no_pi = {}
 
@@ -42,7 +48,7 @@ for scen in scenarios:
         
         for esm in esms_ft:
             
-            esm_file = glob.glob(f'{datadir_ft}/{esm}_{scen}_r1i1p1_tas_*.globmean.nc')[0]
+            esm_file = glob.glob(f'{datadir}/vanVliet2016/FastTrack_tas_globalmean/{esm}_{scen}_r1i1p1_tas_*.globmean.nc')[0]
             
             data_in = Dataset(f'{esm_file}')
             data_tas = data_in.variables['tas'][:]
@@ -55,7 +61,7 @@ for scen in scenarios:
 
         for esm in esms:
             
-            esm_file = glob.glob(f'{datadir}/tas_annual_{esm}'
+            esm_file = glob.glob(f'{datadir}/processed/globalmean_annual/tas_annual_{esm}'
                         f'_{scen}_r1i1p1_EWEMBI_2006-*.csv')[0]
             
             df_in = pd.read_csv(esm_file)
@@ -108,7 +114,7 @@ plt.legend(handles=handles)
 plt.ylabel('GMST')
 plt.xlabel('Year')
 plt.tight_layout()
-# plt.savefig('plots/gmst_no_pi.png', dpi=100)
+plt.savefig('../figures/gmst_no_pi.png', dpi=100)
 # plt.clf()
 
 # CONCLUSION: FastTrack and ISIMIP2b are not the same data, even for the 
@@ -117,7 +123,6 @@ plt.tight_layout()
 # runs. 
 
 #%%
-
 
 temp_data = {}
 
@@ -144,7 +149,7 @@ for scen in scenarios:
                 isimip_dif = np.mean(isimip_difs)
             else:
     
-                isimip2b_hist_file = glob.glob(f'{datadir}/tas_annual_{esm_isimip}'
+                isimip2b_hist_file = glob.glob(f'{datadir}/processed/globalmean_annual/tas_annual_{esm_isimip}'
                             f'_historical_r1i1p1_EWEMBI_1861-*.csv')[0]
                 
                 df_hist = pd.read_csv(isimip2b_hist_file)
@@ -161,7 +166,7 @@ for scen in scenarios:
                         
             
             # Get FastTrack hist data
-            esm_hist_file = glob.glob(f'{datadir_ft}/{esm}'
+            esm_hist_file = glob.glob(f'{datadir}/vanVliet2016/FastTrack_tas_globalmean/{esm}'
                         f'_historical_r1i1p1_tas_1960*.nc')[0]
             
             data_in = Dataset(f'{esm_hist_file}')
@@ -171,7 +176,7 @@ for scen in scenarios:
             
             
             # Get FastTrack future data
-            esm_file = glob.glob(f'{datadir_ft}/{esm}_{scen}_r1i1p1_tas_*.globmean.nc')[0]
+            esm_file = glob.glob(f'{datadir}/vanVliet2016/FastTrack_tas_globalmean/{esm}_{scen}_r1i1p1_tas_*.globmean.nc')[0]
             
             data_in = Dataset(f'{esm_file}')
             data_tas = data_in.variables['tas'][:]
@@ -434,63 +439,28 @@ for source in energy_change.keys():
     plt.ylabel(f'% damages on {source} power plants')
     plt.title(f'{source}')
     plt.tight_layout()
-    plt.savefig(f'plots/{source}_gmst_mmm_percentiles.png', dpi=100)
+    plt.savefig(f'../figures/{source}_gmst_mmm_percentiles.png', dpi=100)
     plt.clf()
 
 #%%
 
-for source in energy_change.keys():
+# if adaptation values in array
+
+# for source in energy_change.keys():
     
-    for scen in scenarios:
-        for decade in decades:
+#     for scen in scenarios:
+#         for decade in decades:
             
-            plt.scatter(np.mean(temp_data[scen][decade]), 
-                energy_change[source]['Adaptation'][scen][decade
-               ] - energy_change[source]['Baseline'][scen][decade],
-                color='black', marker=markers[decade])
+#             plt.scatter(np.mean(temp_data[scen][decade]), 
+#                 energy_change[source]['Adaptation'][scen][decade
+#                ] - energy_change[source]['Baseline'][scen][decade],
+#                 color='black', marker=markers[decade])
     
-    plt.xlabel('GMST cf 1861-1900')
-    plt.ylabel('Difference in % damages \n Adaptation - Baseline')
-    plt.tight_layout()
-    plt.savefig(f'plots/{source}_adaptation_dif.png', dpi=100)
-    plt.clf()
+#     plt.xlabel('GMST cf 1861-1900')
+#     plt.ylabel('Difference in % damages \n Adaptation - Baseline')
+#     plt.tight_layout()
+#     plt.savefig(f'../figures/{source}_adaptation_dif.png', dpi=100)
+#     plt.clf()
 #%%
 
 
-levels = ['low', 'med', 'high']
-response='Baseline'
-params_all_levels = {}
-
-for source in energy_change.keys():
-    print(source)
-    params_all_levels[source] = {}
-
-    temps = []
-    impacts = []
-    for l_i, level in enumerate(levels):
-
-        for scen in scenarios:
-            for decade in decades:
-                temps.append(np.mean(temp_data[scen][decade]))
-                impacts.append(energy_change[source][response][scen][decade][l_i])
-        
-    params_in, params_cov = curve_fit(
-        fit, temps, impacts)
-    
-    print(f'curve_fit params {params_in}')
-    print(f'curve_fit errors {np.sqrt(np.diag(params_cov))} \n')
-
-    params_all_levels[source]['Parameters'] = params_in 
-    params_all_levels[source]['Errors'] = np.sqrt(np.diag(params_cov))
-          
-    
-    data = {"impacts":impacts, "temps":temps}
-    model = sm.ols(formula = 'impacts ~ temps + np.power(temps, 2) -1', data = data)
-    results = model.fit()
-    results.params
-    
-    
-    print(f'sm.ols params {results.params}')
-    print(f'sm.ols errors {results.bse} \n \n')
-
-         
